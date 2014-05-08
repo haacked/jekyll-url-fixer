@@ -10,7 +10,7 @@ namespace SubtextJekyllExporter
     {
         private static void Main(string[] args)
         {
-            if (args.Length != 2)
+            if (args.Length < 2)
             {
                 Console.WriteLine("Please pass the path to the Google Web Report 404s and the past to your Jekyll _posts directory");
                 return;
@@ -18,10 +18,44 @@ namespace SubtextJekyllExporter
             string errorCsv = args[0];
             string postsDirectory = args[1];
 
-            var index = Directory.EnumerateFiles(postsDirectory)
+            var index = Directory.EnumerateFiles(
+                Path.Combine(postsDirectory, "archived"))
                 .Select(ParseFileName)
                 .Where(f => f != null)
                 .ToDictionary(f => f.Slug, f => f, StringComparer.OrdinalIgnoreCase);
+
+            if (args.Length == 3)
+            {
+                var redirects = index
+                    .Select(i => new
+                    {
+                        from = i.Value.SubtractDay(), target = i.Value
+                    });
+
+                const string contentFormat = @"---
+layout: redirect
+{0}
+redirect: {1}
+---
+";
+                // Create Redirects.
+                foreach (var file in redirects)
+                {
+                    var content = String.Format(
+                        CultureInfo.InvariantCulture,
+                        contentFormat,
+                        file.from.FormattedYamlDate,
+                        file.target.Url);
+                    var redirectsFilePath = Path.Combine(
+                        postsDirectory,
+                        "redirects",
+                        file.from.JekyllFileName);
+
+                    File.WriteAllText(redirectsFilePath, content);
+                }
+
+                return;
+            }
 
             var brokenUrls = File.ReadAllLines(errorCsv)
                 .Skip(1)
@@ -129,6 +163,27 @@ namespace SubtextJekyllExporter
         public int Day { get; set; }
         public string Slug { get; set; }
 
+        public DateTime AsDate
+        {
+            get
+            {
+                return DateTime.Parse(Year + "/" + Month + "/" + Day);
+            }
+        }
+
+        public PostInfo SubtractDay()
+        {
+            var previousDay = AsDate.AddDays(-1);
+
+            return new PostInfo
+            {
+                Year = previousDay.Year,
+                Month = previousDay.Month,
+                Day = previousDay.Day,
+                Slug = Slug
+            };
+        }
+
         public bool MatchesDate(PostInfo otherPostInfo)
         {
             return otherPostInfo.Year == Year
@@ -158,6 +213,21 @@ namespace SubtextJekyllExporter
                     Month,
                     Day,
                     Slug);
+            }
+        }
+
+        public string Url
+        {
+            get
+            {
+                return String.Format(
+                    CultureInfo.InvariantCulture,
+                    "/archive/{0}/{1:D2}/{2:D2}/{3}.aspx/",
+                    Year,
+                    Month,
+                    Day,
+                    Slug
+                    );
             }
         }
     }
